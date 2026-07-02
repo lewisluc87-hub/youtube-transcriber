@@ -1,0 +1,5 @@
+# Audio-transcription fallback for videos with no captions
+faster-whisper>=1.0
+# AI summarization (pick the one matching your API key)
+anthropic>=0.40
+openai>=1.50

@@ -1,0 +1,13 @@
+# Secrets — never commit API keys
+.env
+*.key
+
+# Generated output
+output/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/

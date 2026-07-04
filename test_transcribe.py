@@ -328,3 +328,56 @@ def test_age_restricted_correctly_detected(monkeypatch):
     monkeypatch.setattr("yt_dlp.YoutubeDL", FakeYDL)
     with pytest.raises(TranscriberError, match="age-restricted"):
         transcribe.fetch_metadata(VID)
+
+
+# ---------------------------------------------------------------------------
+# .env file loading
+# ---------------------------------------------------------------------------
+
+def test_dotenv_does_not_override_real_env_var(monkeypatch, tmp_path):
+    """A real shell environment variable must always win over .env contents."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "from-shell")
+    env_file = tmp_path / ".env"
+    env_file.write_text("ANTHROPIC_API_KEY=from-dotenv\n")
+
+    from dotenv import load_dotenv
+    load_dotenv(env_file, override=False)
+
+    assert os.environ["ANTHROPIC_API_KEY"] == "from-shell"
+
+
+# ---------------------------------------------------------------------------
+# Regression: stale outputs from a previous run must not linger
+# ---------------------------------------------------------------------------
+
+def test_no_stale_summary_after_rerun_with_no_summary(tmp_path, monkeypatch):
+    """A summary.md from an earlier run must be removed if a later run skips it."""
+    monkeypatch.setattr(transcribe, "fetch_metadata", lambda vid: META_SHORT)
+    monkeypatch.setattr(transcribe, "fetch_captions",
+                        lambda vid: ([Segment(0, 2, "content")], "manual-captions"))
+
+    # First run: produces a summary.
+    monkeypatch.setattr(transcribe, "generate_summary", lambda result: "First summary.")
+    folder = transcribe.run(VID, output_dir=str(tmp_path))
+    assert (folder / "summary.md").exists()
+
+    # Second run: --no-summary should remove the stale summary.md.
+    folder = transcribe.run(VID, output_dir=str(tmp_path), no_summary=True)
+    assert not (folder / "summary.md").exists()
+    assert (folder / "transcript.txt").exists()
+
+
+def test_no_stale_txt_after_rerun_with_srt(tmp_path, monkeypatch):
+    """Switching from .txt to --srt must not leave the old transcript.txt behind."""
+    monkeypatch.setattr(transcribe, "fetch_metadata", lambda vid: META_SHORT)
+    monkeypatch.setattr(transcribe, "fetch_captions",
+                        lambda vid: ([Segment(0, 2, "content")], "manual-captions"))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    folder = transcribe.run(VID, output_dir=str(tmp_path))
+    assert (folder / "transcript.txt").exists()
+
+    folder = transcribe.run(VID, output_dir=str(tmp_path), srt=True)
+    assert (folder / "transcript.srt").exists()
+    assert not (folder / "transcript.txt").exists()

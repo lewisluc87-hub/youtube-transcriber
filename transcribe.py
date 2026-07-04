@@ -6,7 +6,8 @@ Sourcing strategy (captions-first):
   2. Auto-generated captions via youtube-transcript-api
   3. Fallback: download audio with yt-dlp and transcribe locally with faster-whisper
 
-Summary (optional): generated only if ANTHROPIC_API_KEY or OPENAI_API_KEY is set.
+Summary (optional): generated only if ANTHROPIC_API_KEY or OPENAI_API_KEY is set,
+either as a real environment variable or in a .env file in the project root.
 
 Usage:
   python transcribe.py <youtube_url> [--srt] [--no-summary] [--force] [--output-dir DIR]
@@ -22,6 +23,16 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+# Load ANTHROPIC_API_KEY / OPENAI_API_KEY from a .env file next to this script,
+# if one exists. A real environment variable (set via `$env:` or `export`) always
+# takes precedence and is never overwritten by .env.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
+except ImportError:
+    pass  # .env support is optional; real env vars still work without it
 
 MAX_DURATION_SECONDS = 60 * 60  # 1 hour guard before expensive Whisper jobs
 DEFAULT_OUTPUT_DIR = "output"
@@ -328,6 +339,14 @@ def render_summary_md(result: TranscriptResult, summary: str) -> str:
 def write_outputs(result: TranscriptResult, summary: str | None, output_dir: str, srt: bool) -> Path:
     folder = Path(output_dir) / f"{result.video_id}-{slugify(result.title)}"
     folder.mkdir(parents=True, exist_ok=True)
+
+    # Clean up stale outputs from a previous run with different flags, so the
+    # folder always reflects only the current run (e.g. switching --srt on/off,
+    # or re-running with --no-summary shouldn't leave an old summary.md behind).
+    (folder / "transcript.txt").unlink(missing_ok=True)
+    (folder / "transcript.srt").unlink(missing_ok=True)
+    (folder / "summary.md").unlink(missing_ok=True)
+
     if srt:
         (folder / "transcript.srt").write_text(render_srt(result), encoding="utf-8")
     else:
@@ -343,7 +362,8 @@ def write_outputs(result: TranscriptResult, summary: str | None, output_dir: str
 
 
 def run(url: str, *, srt: bool = False, no_summary: bool = False, force: bool = False,
-        output_dir: str = DEFAULT_OUTPUT_DIR, whisper_model: str = "base") -> Path:
+        output_dir: str = DEFAULT_OUTPUT_DIR, whisper_model: str = "base",
+        force_whisper: bool = False) -> Path:
     video_id = extract_video_id(url)
     canonical_url = f"https://www.youtube.com/watch?v={video_id}"
 
@@ -352,8 +372,12 @@ def run(url: str, *, srt: bool = False, no_summary: bool = False, force: bool = 
     duration = meta["duration"]
     print(f"  {meta['title']}  ({meta['channel']}, {format_timestamp(duration)})")
 
-    print("Looking for captions...")
-    caption_result = fetch_captions(video_id)
+    if force_whisper:
+        print("--force-whisper set: skipping caption lookup, testing Whisper path directly.")
+        caption_result = None
+    else:
+        print("Looking for captions...")
+        caption_result = fetch_captions(video_id)
 
     if caption_result is not None:
         segments, source = caption_result
@@ -402,11 +426,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="base output directory (default: output/)")
     parser.add_argument("--whisper-model", default="base",
                         help="faster-whisper model size for the no-captions fallback (default: base)")
+    parser.add_argument("--force-whisper", action="store_true",
+                        help="DEBUG: skip caption lookup and force the Whisper path, "
+                             "even if captions exist (for testing the fallback)")
     args = parser.parse_args(argv)
 
     try:
         run(args.url, srt=args.srt, no_summary=args.no_summary, force=args.force,
-            output_dir=args.output_dir, whisper_model=args.whisper_model)
+            output_dir=args.output_dir, whisper_model=args.whisper_model,
+            force_whisper=args.force_whisper)
     except TranscriberError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1

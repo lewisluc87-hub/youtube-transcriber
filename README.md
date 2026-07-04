@@ -1,8 +1,6 @@
 # yt-transcriber
 
-Paste a YouTube link, get a transcript — and optionally an AI summary — without watching the video. Transcripts are saved to a per-video folder, so you build a local archive as you go.
-
-**Captions-first:** if the video has captions (manual or auto-generated), they're fetched instantly and for free. Only if a video has *no* captions does the tool fall back to downloading the audio and transcribing locally with [faster-whisper](https://github.com/SYSTRAN/faster-whisper).
+Paste a YouTube link, get a transcript and AI summary — no watching required. Captions-first, with a local Whisper fallback for videos that have none. Every run is saved to a per-video folder, so you build a local archive as you go.
 
 ## Install
 
@@ -43,10 +41,11 @@ Output goes to `output/<video-id>-<title-slug>/`:
 | `--force` | Bypass the 1-hour guard for Whisper jobs on long captionless videos |
 | `--output-dir DIR` | Change the base output directory (default `output/`) |
 | `--whisper-model SIZE` | faster-whisper model for the fallback (default `base`; try `small` or `medium` for better accuracy) |
+| `--force-whisper` | Debug: skip caption lookup and force local Whisper transcription, even if captions exist (useful for testing the fallback path on a video that already has captions) |
 
 ### AI summaries (optional)
 
-Set one of these environment variables — the tool works fine without either, it just skips the summary:
+Set one of these — either as a real environment variable, or in a `.env` file in the project root (copy `.env.example` to `.env` and fill it in). A real environment variable always takes precedence if both are set. The tool works fine with neither, it just skips the summary:
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...   # preferred if both are set
@@ -54,7 +53,12 @@ export ANTHROPIC_API_KEY=sk-ant-...   # preferred if both are set
 export OPENAI_API_KEY=sk-...
 ```
 
-Never commit keys. `.gitignore` already excludes `.env`.
+Or via `.env`:
+```
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Never commit keys. `.gitignore` already excludes `.env` — only `.env.example` (with no real key in it) is tracked.
 
 ## Scope
 

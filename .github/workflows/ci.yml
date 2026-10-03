@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        # requirements.txt holds the CLI's runtime deps only. The MCP server
+        # and test tooling are separate, exact-pinned installs -- same
+        # optional-extra pattern this repo already uses for faster-whisper
+        # and anthropic. ruff is pinned exactly because a newer ruff ships a
+        # broader default rule set and can turn CI red with no code change.
+        run: |
+          pip install -r requirements.txt
+          pip install pytest==9.1.1 pytest-asyncio==1.4.0 mcp==2.2.0 ruff==0.16.6
+
+      - name: Lint (files added with the MCP server)
+        # Scoped to the MCP server's own files on purpose: transcribe.py and
+        # test_transcribe.py predate any lint config here and have a few
+        # minor findings under current ruff (unused imports, an
+        # `assert ... or True`, a shebang without the executable bit, a
+        # redundant int() cast).
+        # Cleaning those up is a separate change, not a side effect of this one.
+        run: ruff check mcp_server.py test_mcp_server.py mcp_test_shims
+
+      - name: Tests (CLI unit tests + MCP server tests, no network)
+        run: pytest -q
